@@ -76,7 +76,41 @@ export interface PlumeGridResponse {
   source_term: Record<string, any>
   diagnostics: Record<string, any>
   validity: Record<string, any>
+  threshold_stats: ThresholdStats | null
   disclaimer: string
+}
+
+export interface ThresholdPart {
+  threshold_ug_m3: number
+  max_sampled_ug_m3: number
+  n_sampled_nodes: number
+  n_exceeding_nodes: number
+  n_sampled_cells: number
+  n_exceeding_cells: number
+  cell_size_m2: number
+  sampling_frame_area_m2: number
+  exceeding_area_m2: number
+  exceeding_area_fraction: number
+  comparison: string
+  cell_rule: string
+  node_rule: string
+  spacing_downwind_m: number
+  spacing_crosswind_m: number
+  model_advisory: {
+    briggs_suggested_range_m: [number, number] | null
+    n_out_of_range_nodes_total: number | null
+    n_out_of_range_nodes_exceeding: number | null
+  }
+}
+
+export interface ThresholdStats {
+  threshold_ug_m3: number
+  threshold_nature: string
+  plume_contribution: ThresholdPart
+  total_concentration: ThresholdPart
+  background_note: string
+  power_law_advisory_note: string | null
+  method_note: string
 }
 
 export interface PlumeGridRequest {
@@ -89,6 +123,7 @@ export interface PlumeGridRequest {
   parameterization: 'briggs_rural' | 'power_law'
   power_law?: { ay: number; py: number; az: number; pz: number } | null
   calm_threshold_ms: number
+  concentration_threshold_ug_m3?: number | null
 }
 
 export interface CheckResult {

@@ -92,6 +92,14 @@ class PlumeGridRequest(BaseModel):
         description="power_law 参数: ay, py, az, pz（均为正）",
     )
     calm_threshold_ms: float = Field(1.0, gt=0.0, le=5.0)
+    concentration_threshold_ug_m3: float | None = Field(
+        None,
+        ge=0.0,
+        description=(
+            "课堂自定义浓度阈值（μg/m³），仅用于教学统计，不是法定限值。"
+            "为 None 时不计算超阈值统计。"
+        ),
+    )
 
 
 class PlumeGridResponse(BaseModel):
@@ -110,6 +118,13 @@ class PlumeGridResponse(BaseModel):
     source_term: dict
     diagnostics: dict
     validity: dict
+    threshold_stats: dict | None = Field(
+        None,
+        description=(
+            "课堂自定义浓度阈值统计（按实际米制间距计面积）；"
+            "仅教学用途，不是法定限值。请求未给阈值时为 None。"
+        ),
+    )
     disclaimer: str
 
 

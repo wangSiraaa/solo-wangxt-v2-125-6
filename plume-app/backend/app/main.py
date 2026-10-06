@@ -106,6 +106,21 @@ def meta():
             "default_threshold_ms": settings.default_calm_threshold_ms,
             "behavior": "低于阈值返回 422 calm_wind，拒绝硬算",
         },
+        "concentration_threshold": {
+            "field": "concentration_threshold_ug_m3",
+            "unit": "μg/m³",
+            "nature": "课堂自定义阈值，仅用于教学分析，不是法定限值",
+            "comparison": "严格大于（>），等于阈值不计入超阈值",
+            "area_method": (
+                "按网格实际米制间距逐单元计数：单元四角节点均值 > 阈值"
+                "则整单元计入（面积 = 超阈单元数 × 下风向间距 × 横风向间距）；"
+                "不做等值线插值或亚网格估计"
+            ),
+            "reported_separately": ["plume_contribution", "total_concentration"],
+            "background_effect": "背景升高只改变总浓度统计，不影响烟羽贡献统计",
+            "empty_result": "阈值高于全部采样值时超阈值面积/格点为 0",
+            "null_when": "请求未提供该字段时 threshold_stats 为 null",
+        },
         "stability_classes": [
             {"class": s, **STABILITY_DESCRIPTIONS[s]} for s in STABILITY_CLASSES
         ],

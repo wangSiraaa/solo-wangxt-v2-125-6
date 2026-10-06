@@ -137,6 +137,68 @@ function fmt(v: number, d = 2) {
           </div>
         </div>
 
+        <div class="section" v-if="result.threshold_stats">
+          <h2>课堂自定义阈值统计（非法定限值）</h2>
+          <div class="notice info" style="font-size:11px">
+            阈值 &gt; <b>{{ fmt(result.threshold_stats.threshold_ug_m3) }}</b> μg/m³，
+            严格大于口径；按当前网格实际间距
+            {{ result.threshold_stats.plume_contribution.spacing_downwind_m.toFixed(0) }}×{{
+              result.threshold_stats.plume_contribution.spacing_crosswind_m.toFixed(0)
+            }} m 逐单元计数（单元四角均值 &gt; 阈值整格计入）。
+          </div>
+          <table class="meta-tbl">
+            <tr>
+              <th>口径</th><th>超阈面积</th><th>占采样框</th>
+              <th>超阈格点</th><th>采样最大值</th>
+            </tr>
+            <tr>
+              <td>烟羽贡献</td>
+              <td>{{ fmt(result.threshold_stats.plume_contribution.exceeding_area_m2 / 1e6) }} km²</td>
+              <td>{{ fmt(result.threshold_stats.plume_contribution.exceeding_area_fraction * 100, 1) }}%</td>
+              <td>
+                {{ result.threshold_stats.plume_contribution.n_exceeding_nodes }}
+                /{{ result.threshold_stats.plume_contribution.n_sampled_nodes }}
+              </td>
+              <td>{{ fmt(result.threshold_stats.plume_contribution.max_sampled_ug_m3) }}</td>
+            </tr>
+            <tr>
+              <td>总浓度</td>
+              <td>{{ fmt(result.threshold_stats.total_concentration.exceeding_area_m2 / 1e6) }} km²</td>
+              <td>{{ fmt(result.threshold_stats.total_concentration.exceeding_area_fraction * 100, 1) }}%</td>
+              <td>
+                {{ result.threshold_stats.total_concentration.n_exceeding_nodes }}
+                /{{ result.threshold_stats.total_concentration.n_sampled_nodes }}
+              </td>
+              <td>{{ fmt(result.threshold_stats.total_concentration.max_sampled_ug_m3) }}</td>
+            </tr>
+          </table>
+          <div class="muted" style="font-size:10.5px;margin-top:4px;line-height:1.5">
+            {{ result.threshold_stats.background_note }}
+          </div>
+          <template
+            v-if="result.threshold_stats.plume_contribution.model_advisory
+              .n_out_of_range_nodes_total !== null"
+          >
+            <dl class="kv" style="margin-top:6px">
+              <dt>Briggs 建议范围外格点（总/超阈·烟羽/超阈·总浓度）</dt>
+              <dd>
+                {{ result.threshold_stats.plume_contribution.model_advisory
+                  .n_out_of_range_nodes_total }}
+                /{{ result.threshold_stats.plume_contribution.model_advisory
+                  .n_out_of_range_nodes_exceeding }}
+                /{{ result.threshold_stats.total_concentration.model_advisory
+                  .n_out_of_range_nodes_exceeding }}
+              </dd>
+            </dl>
+          </template>
+          <div v-else class="muted" style="font-size:11px;margin-top:4px">
+            {{ result.threshold_stats.power_law_advisory_note }}
+          </div>
+          <div class="notice warn" style="font-size:10.5px;margin-top:6px">
+            {{ result.threshold_stats.method_note }}
+          </div>
+        </div>
+
         <div class="section">
           <h2>采样与适用范围提示</h2>
           <div class="notice info">

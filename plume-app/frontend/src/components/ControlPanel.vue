@@ -15,10 +15,25 @@ const emit = defineEmits<{
   (e: 'select-source', id: number): void
   (e: 'select-met', id: number): void
   (e: 'run'): void
+  (e: 'threshold-change', value: number): void
 }>()
 
 function patch(p: Partial<FormState>) {
   emit('update:form', { ...props.form, ...p })
+}
+
+function onThresholdToggle(enabled: boolean) {
+  // 启用/停用阈值立即重算：停用则请求不带阈值字段，地图超阈层与统计消失
+  // （先显式同步本组件 props，再交给下一个事件循环发起请求，避免读到旧值）
+  emit('update:form', { ...props.form, thresholdEnabled: enabled })
+  setTimeout(() => {
+    if (props.form.windSpeed >= props.form.calmThreshold) emit('run')
+  }, 0)
+}
+
+function onThresholdRelease(value: number) {
+  // 滑块松开：把最终值交给父组件写回后重算（@input 已同步标签显示）
+  emit('threshold-change', value)
 }
 
 const isCalm = computed(() => props.form.windSpeed < props.form.calmThreshold)
@@ -189,6 +204,28 @@ const isCalm = computed(() => props.form.windSpeed < props.form.calmThreshold)
       <label class="field"><span class="lbl">静风阈值（m/s）</span>
         <input class="num" type="number" min="0.1" max="5" step="0.1" :value="form.calmThreshold"
           @input="patch({ calmThreshold: Number(($event.target as HTMLInputElement).value) })" /></label>
+
+      <div class="threshold-box">
+        <label class="toggle">
+          <input type="checkbox" :checked="form.thresholdEnabled"
+            @change="onThresholdToggle(($event.target as HTMLInputElement).checked)" />
+          启用课堂自定义浓度阈值
+        </label>
+        <label class="field" :class="{ disabled: !form.thresholdEnabled }">
+          <span class="lbl">浓度阈值（μg/m³，<b>非法定限值</b>）<b>{{ form.concentrationThreshold }}</b></span>
+          <input data-test="threshold" type="range" min="0" max="500" step="1"
+            :value="form.concentrationThreshold" :disabled="!form.thresholdEnabled"
+            @input="patch({ concentrationThreshold: Number(($event.target as HTMLInputElement).value) })"
+            @change="onThresholdRelease(Number(($event.target as HTMLInputElement).value))" />
+        </label>
+        <div class="muted" style="font-size:10px;line-height:1.4">
+          阈值仅用于教学统计：后端按当前网格实际米制间距，分别统计
+          <b>烟羽贡献</b>与<b>总浓度</b>的超阈面积、占采样框比例与
+          Briggs 建议范围外格点数；地图按整单元叠加（非等值线插值面积）。
+          调整阈值松开滑块后自动重算；改变 nx/ny 只改采样，统计随各自网格重算，不回写源项与气象。
+        </div>
+      </div>
+
       <button @click="emit('run')" :disabled="loading || isCalm">
         {{ loading ? '计算中…' : '运行烟羽计算' }}
       </button>

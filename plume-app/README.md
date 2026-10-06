@@ -93,9 +93,23 @@ C(x,y,0) = Q / (π·u·σy·σz) · exp(−y²/(2σy²)) · exp(−He²/(2σz²)
 4. **源项独立展示**：烟囱几何高、Δh、有效源高、Q、烟温等在右侧面板分项列出。
 5. **网格分辨率只改变采样**：源/气象输入是独立对象，
    界面调整通过 override 合并、不改数据库；改 nx/ny 不改变任何物理输入，
-   固定物理点的浓度与分辨率无关（见解析核对 #9）。
+   固定物理点的浓度与分辨率无关（见解析核对 #9）。阈值统计也按各自网格的
+   实际米制间距分别重算，切换粗细网格不会回写源项与气象。
 6. **地图展示采样范围**：虚线矩形是采样边界，角点经纬度随响应返回；
    右上角标注节点数与间距，等值线为网格内线性插值，**不外推、不暗示无限精度**。
+7. **课堂自定义浓度阈值统计（非法定限值）**：请求可带
+   `concentration_threshold_ug_m3`，后端对**烟羽贡献**与**总浓度**分别统计：
+   - 按网格**实际米制间距**逐单元计数（单元四角节点均值 **严格大于**阈值
+     则整格计入）：超阈面积 = 超阈单元数 × 下风向间距 × 横风向间距，
+     另给占采样框比例、超阈节点数（节点口径单独列出）；
+   - Briggs 建议范围（100 m–10 km）外的格点总数及其中超阈数；
+     幂律参数化下该计数为 `null`（建议范围不适用）；
+   - 背景升高**只改变总浓度统计**，烟羽贡献统计不读背景；
+   - 阈值高于全部采样值时面积/格点为 0；静风被拦截时不产生任何统计；
+   - 地图上红框＝总浓度超阈单元、紫框＝烟羽贡献超阈单元，
+     与等值线图层相互独立。**该面积是整单元阶梯估计，不是等值线插值精度，
+     不代表亚网格尺度或网格之外的真实暴露面积；阈值仅用于教学分析，
+     不解释为法定限值。**
 
 ## 4. 解析核对用例
 
@@ -136,11 +150,35 @@ GET  /api/health
 GET  /api/meta                   单位约定/稳定度/Briggs 系数/静风阈值
 GET  /api/sources[/id]           虚构排放源（PostGIS 或内存）
 GET  /api/meteorology[/id]       虚构气象情景
-POST /api/plume/grid             采样网格浓度（烟羽/背景/总量分开）
+POST /api/plume/grid             采样网格浓度（烟羽/背景/总量分开；
+                                 可选 concentration_threshold_ug_m3 返回 threshold_stats）
 POST /api/plume/points           任意经纬度点求值（核对用）
 GET  /api/plume/wind-check       风向↔坐标换算检查
 POST /api/plume/rise             Holland 抬升明细
 GET  /api/checks                 10 条解析核对
+```
+
+`threshold_stats` 口径（教学用途，非法定限值）：
+
+```jsonc
+{
+  "threshold_ug_m3": 30.0,
+  "plume_contribution": {
+    "n_exceeding_nodes": 404,      // 节点口径：值 > 阈值的采样点数
+    "n_exceeding_cells": 412,      // 单元口径：四角均值 > 阈值
+    "exceeding_area_m2": 4326000.0,// = n_exceeding_cells × dx × dy
+    "exceeding_area_fraction": 0.3433,
+    "spacing_downwind_m": 157.5,   // 本网格实际米制间距
+    "spacing_crosswind_m": 66.7,
+    "model_advisory": {            // Briggs 范围外格点（幂律时为 null）
+      "briggs_suggested_range_m": [100.0, 10000.0],
+      "n_out_of_range_nodes_total": 31,
+      "n_out_of_range_nodes_exceeding": 0
+    }
+  },
+  "total_concentration": { /* 同结构；背景升高只影响这一套 */ },
+  "method_note": "…整单元计数，非等值线插值面积，不代表真实暴露范围…"
+}
 ```
 
 交互文档：http://localhost:8000/docs 。

@@ -140,3 +140,44 @@ export function samplingBoundary(
     geometry: { type: 'Polygon', coordinates: [ring] },
   }
 }
+
+/**
+ * 超阈值区域：按与后端完全一致的“整单元计数”口径输出四边形集合。
+ *
+ * 单元 (r,c) 四角节点（左下/右下/右上/左上）算术平均值严格大于阈值时，
+ * 整个单元计入。不做等值线插值、不做亚网格细分——这是有限采样网格上的
+ * 阶梯估计，不是真实暴露面积。
+ *
+ * kind: 'total' | 'plume'，用于地图着色与点击辨识。
+ */
+export function thresholdExceedPolygons(
+  z: number[][],
+  lon: number[][],
+  lat: number[][],
+  level: number,
+  kind: 'total' | 'plume',
+): GeoJSON.FeatureCollection {
+  const ny = z.length
+  const nx = z[0].length
+  const features: GeoJSON.Feature[] = []
+  for (let r = 0; r < ny - 1; r++) {
+    for (let c = 0; c < nx - 1; c++) {
+      const mean =
+        (z[r][c] + z[r][c + 1] + z[r + 1][c] + z[r + 1][c + 1]) / 4
+      if (!(mean > level)) continue // 严格大于；NaN / 等于均不计入
+      const ring = [
+        [lon[r][c], lat[r][c]],
+        [lon[r][c + 1], lat[r][c + 1]],
+        [lon[r + 1][c + 1], lat[r + 1][c + 1]],
+        [lon[r + 1][c], lat[r + 1][c]],
+        [lon[r][c], lat[r][c]],
+      ]
+      features.push({
+        type: 'Feature',
+        properties: { kind, level, mean },
+        geometry: { type: 'Polygon', coordinates: [ring] },
+      })
+    }
+  }
+  return { type: 'FeatureCollection', features }
+}

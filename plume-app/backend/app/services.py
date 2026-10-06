@@ -138,6 +138,166 @@ def iso_levels(max_value: float, n_levels: int = 8) -> list[float]:
     return out[-n_levels:]
 
 
+# ---------------------------------------------------------------------------
+# 课堂自定义浓度阈值统计（教学用途，不是法定限值）
+#
+# 面积口径（必须明示，不把等值线插值精度当作真实暴露面积）：
+#   采样网格在烟羽坐标(米)上是规则矩形，单元 (r,c) 的实际米制面积为
+#   cell_area = spacing_downwind_m × spacing_crosswind_m（两个方向分别为
+#   本次网格的真实间距，随风向整体旋转后面积不变）。
+#   一个单元四角节点的算术平均值 > 阈值时，该单元整体计入超阈值面积；
+#   不做等值线线性插值，不做亚网格细分。因此结果是“整单元计数”的
+#   保守阶梯估计：细网格→更平滑，粗网格→阶梯感更强。
+#   超阈值格点数（节点口径）另外单独给出，与单元口径区分。
+# ---------------------------------------------------------------------------
+
+THRESHOLD_STATS_NOTE = (
+    "课堂自定义阈值，仅用于教学分析，不解释为法定排放/环境限值；"
+    "超阈值面积按采样网格的实际米制间距逐单元计数（单元四角均值 > 阈值"
+    "即整格计入），不是等值线插值面积，不代表亚网格尺度或网格之外的真实暴露范围。"
+)
+
+
+def _cell_corner_mean(field: np.ndarray) -> np.ndarray:
+    """每个单元四角节点的算术平均；返回形状 (ny-1, nx-1)。"""
+    return 0.25 * (
+        field[:-1, :-1]
+        + field[:-1, 1:]
+        + field[1:, :-1]
+        + field[1:, 1:]
+    )
+
+
+def _threshold_part(
+    field: np.ndarray,
+    threshold: float,
+    cell_area_m2: float,
+    dx: float,
+    dy: float,
+    oob_node_mask: np.ndarray | None,
+    advisory_range_m: tuple[float, float] | None,
+) -> dict:
+    """对单个浓度场（烟羽贡献 或 总浓度）做超阈值统计。
+
+    返回：超阈值节点/单元数、面积（m²）、占采样框比例、建议范围外节点数
+    （其中超阈值的个数）。阈值高于全部采样值时各项为 0。
+    """
+    node_exceed = field > threshold
+    n_exceed_nodes = int(np.count_nonzero(node_exceed))
+
+    cell_mean = _cell_corner_mean(field)
+    cell_exceed = cell_mean > threshold
+    n_exceed_cells = int(np.count_nonzero(cell_exceed))
+
+    n_nodes_total = int(field.size)
+    n_cells_total = int(cell_mean.size)
+    area_exceed_m2 = n_exceed_cells * cell_area_m2
+    area_total_m2 = n_cells_total * cell_area_m2
+    fraction = n_exceed_cells / n_cells_total if n_cells_total else 0.0
+
+    if oob_node_mask is not None:
+        oob_total = int(np.count_nonzero(oob_node_mask))
+        oob_exceed = int(np.count_nonzero(oob_node_mask & node_exceed))
+        advisory = {
+            "briggs_suggested_range_m": list(advisory_range_m),
+            "n_out_of_range_nodes_total": oob_total,
+            "n_out_of_range_nodes_exceeding": oob_exceed,
+        }
+    else:
+        advisory = {
+            "briggs_suggested_range_m": None,
+            "n_out_of_range_nodes_total": None,
+            "n_out_of_range_nodes_exceeding": None,
+        }
+
+    return {
+        "threshold_ug_m3": float(threshold),
+        "max_sampled_ug_m3": float(np.nanmax(field)),
+        "n_sampled_nodes": n_nodes_total,
+        "n_exceeding_nodes": n_exceed_nodes,
+        "n_sampled_cells": n_cells_total,
+        "n_exceeding_cells": n_exceed_cells,
+        "cell_size_m2": float(cell_area_m2),
+        "sampling_frame_area_m2": float(area_total_m2),
+        "exceeding_area_m2": float(area_exceed_m2),
+        "exceeding_area_fraction": float(fraction),
+        "comparison": "strict_gt",
+        "cell_rule": "mean_of_four_corner_nodes > threshold",
+        "node_rule": "node_value > threshold",
+        "spacing_downwind_m": float(dx),
+        "spacing_crosswind_m": float(dy),
+        "model_advisory": advisory,
+    }
+
+
+def threshold_statistics(
+    plume: np.ndarray,
+    total: np.ndarray,
+    threshold: float | None,
+    grid: dict,
+    *,
+    downwind_m: np.ndarray | None = None,
+    parameterization: str = "briggs_rural",
+    advisory_range_m: tuple[float, float] = (100.0, 10_000.0),
+) -> dict | None:
+    """组装烟羽贡献与总浓度两套超阈值统计。
+
+    * threshold 为 None：不做阈值统计（返回 None）。
+    * 阈值高于全部采样值：超阈值面积/格点均为 0。
+    * 背景升高只改变 ``total`` 场，因此只影响“总浓度”那一套统计；
+      “烟羽贡献”统计完全不读背景值。
+    * 建议范围外节点：仅 Briggs 参数化时给出（沿下风向 x<100 m 或 x>10 km）；
+      幂律参数化下置 null 并注明不适用。
+    """
+    if threshold is None:
+        return None
+    threshold = float(threshold)
+    if not np.isfinite(threshold) or threshold < 0.0:
+        raise PlumeInputError("浓度阈值须为非负有限值（μg/m³）")
+
+    plume = np.asarray(plume, dtype=float)
+    total = np.asarray(total, dtype=float)
+    dx = float(grid["spacing_downwind_m"])
+    dy = float(grid["spacing_crosswind_m"])
+    cell_area = dx * dy
+
+    if parameterization == "briggs_rural" and downwind_m is not None:
+        x = np.asarray(downwind_m, dtype=float)
+        oob_mask = (x > 0.0) & (
+            (x < advisory_range_m[0]) | (x > advisory_range_m[1])
+        )
+        rng: tuple[float, float] | None = advisory_range_m
+    else:
+        oob_mask = None
+        rng = None
+
+    plume_part = _threshold_part(
+        plume, threshold, cell_area, dx, dy, oob_mask, rng
+    )
+    total_part = _threshold_part(
+        total, threshold, cell_area, dx, dy, oob_mask, rng
+    )
+
+    return {
+        "threshold_ug_m3": threshold,
+        "threshold_nature": "classroom_custom_non_regulatory",
+        "plume_contribution": plume_part,
+        "total_concentration": total_part,
+        "background_note": (
+            "背景浓度为空间常数，只计入“总浓度”统计；"
+            "“烟羽贡献”统计不受背景值影响。"
+        ),
+        "power_law_advisory_note": (
+            None
+            if parameterization == "briggs_rural"
+            else "幂律参数化用于解析核对，Briggs 建议范围不适用，"
+            "建议范围外节点数置空（null）。"
+        ),
+        "method_note": THRESHOLD_STATS_NOTE,
+    }
+
+
+
 def run_grid(req: PlumeGridRequest) -> dict:
     """完整的网格计算流程；静风/非法输入向上抛 CalmWindError/PlumeInputError。"""
     spec = req.grid
@@ -170,6 +330,19 @@ def run_grid(req: PlumeGridRequest) -> dict:
     plume = result["field"]
     bg = met.background_conc_ug_m3
     total = plume + bg
+
+    thr_stats = threshold_statistics(
+        plume,
+        total,
+        req.concentration_threshold_ug_m3,
+        grid,
+        downwind_m=result["x_downwind_m"],
+        parameterization=req.parameterization,
+        advisory_range_m=(
+            settings.briggs_valid_x_min_m,
+            settings.briggs_valid_x_max_m,
+        ),
+    )
 
     return {
         "source_lonlat": [src.lon, src.lat],
@@ -223,6 +396,7 @@ def run_grid(req: PlumeGridRequest) -> dict:
             "plume_rise_detail": rise_detail,
         },
         "diagnostics": result["diagnostics"],
+        "threshold_stats": thr_stats,
         "validity": {
             "model": "steady-state Gaussian plume, flat terrain, full ground reflection",
             "assumptions": [

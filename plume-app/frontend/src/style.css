@@ -153,6 +153,13 @@ details.params summary { cursor: pointer; color: var(--muted); font-size: 12px; 
 
 .toggle { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 12px; }
 
+.threshold-box {
+  border: 1px dashed #b9a87a; background: #fdf9ec;
+  border-radius: 5px; padding: 8px 9px; margin: 8px 0;
+}
+.threshold-box .disabled { opacity: .45; }
+.threshold-box .toggle b { color: var(--err); font-weight: 600; }
+
 .disclaimer-foot {
   position: absolute; left: 50%; transform: translateX(-50%);
   bottom: 8px; z-index: 4; font-size: 10px; color: #7a8794;
@@ -163,3 +170,21 @@ details.params summary { cursor: pointer; color: var(--muted); font-size: 12px; 
 .mono { font-family: ui-monospace, monospace; }
 table.meta-tbl { width: 100%; border-collapse: collapse; font-size: 11.5px; }
 table.meta-tbl td, table.meta-tbl th { border: 1px solid var(--line); padding: 3px 6px; text-align: left; }
+
+/* 超阈值统计浮窗（右上角第二块，位于采样信息之下） */
+.thrinfo {
+  position: absolute; right: 12px; top: 96px; z-index: 5;
+  width: 330px; line-height: 1.45;
+  background: rgba(255,255,255,.94); border: 1px solid var(--line);
+  border-radius: 6px; padding: 8px 10px; font-size: 11px;
+}
+.thr-tbl { width: 100%; border-collapse: collapse; font-size: 11px; margin: 5px 0; }
+.thr-tbl th, .thr-tbl td { border: 1px solid var(--line); padding: 2px 5px; text-align: right; }
+.thr-tbl th:first-child, .thr-tbl td:first-child { text-align: left; }
+.thr-tbl thead th { color: var(--muted); font-weight: 600; }
+.thr-tbl .sw {
+  display: inline-block; width: 9px; height: 9px; border-radius: 2px;
+  margin-right: 4px; vertical-align: -1px;
+}
+.thr-tbl .sw-plume { background: #7c3aed; }
+.thr-tbl .sw-total { background: #dc2626; }

@@ -22,6 +22,8 @@ const repo = ref<string>('…')
 const showFill = ref(true)
 const showIso = ref(true)
 const showBg = ref(true)
+const showThrTotal = ref(true)
+const showThrPlume = ref(true)
 
 const isCalm = computed(() => form.value.windSpeed < form.value.calmThreshold)
 
@@ -83,6 +85,12 @@ function onSelectMet(id: number) {
   }
 }
 
+function onThresholdChange(value: number) {
+  // 滑块松开：先写回阈值再重算，保证请求带的是最新值
+  form.value = { ...form.value, concentrationThreshold: value }
+  run()
+}
+
 async function run() {
   if (isCalm.value) {
     result.value = null
@@ -130,6 +138,9 @@ async function run() {
           ? { ay: form.value.ay, py: form.value.py, az: form.value.az, pz: form.value.pz }
           : null,
       calm_threshold_ms: form.value.calmThreshold,
+      concentration_threshold_ug_m3: form.value.thresholdEnabled
+        ? form.value.concentrationThreshold
+        : null,
     })
   } catch (e: any) {
     result.value = null
@@ -165,6 +176,7 @@ const stops = computed(() =>
       @select-source="onSelectSource"
       @select-met="onSelectMet"
       @run="run"
+      @threshold-change="onThresholdChange"
     />
 
     <div class="map-wrap">
@@ -173,6 +185,8 @@ const stops = computed(() =>
         :show-fill="showFill"
         :show-iso="showIso"
         :show-bg="showBg"
+        :show-thr-total="showThrTotal"
+        :show-thr-plume="showThrPlume"
       />
       <div
         v-if="result && stops.length"
@@ -204,6 +218,16 @@ const stops = computed(() =>
             <input type="checkbox" v-model="showBg" />
             背景值叠加（均匀 {{ result.background_conc_ug_m3 }} μg/m³）
           </label>
+          <template v-if="result.threshold_stats">
+            <label class="toggle" style="margin:2px 0">
+              <input type="checkbox" v-model="showThrTotal" />
+              超阈值区·总浓度（红框）
+            </label>
+            <label class="toggle" style="margin:2px 0">
+              <input type="checkbox" v-model="showThrPlume" />
+              超阈值区·烟羽贡献（紫框）
+            </label>
+          </template>
           <div class="muted" style="font-size:10px;margin-top:2px">
             总浓度＝烟羽贡献＋背景值，见右侧结果分解与悬停读数
           </div>

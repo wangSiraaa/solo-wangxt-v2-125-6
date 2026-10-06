@@ -24,6 +24,8 @@ export interface FormState {
   nx: number
   ny: number
   calmThreshold: number
+  thresholdEnabled: boolean
+  concentrationThreshold: number
 }
 
 export const DEFAULT_FORM: FormState = {
@@ -52,4 +54,6 @@ export const DEFAULT_FORM: FormState = {
   nx: 121,
   ny: 81,
   calmThreshold: 1,
+  thresholdEnabled: true,
+  concentrationThreshold: 30,
 }
