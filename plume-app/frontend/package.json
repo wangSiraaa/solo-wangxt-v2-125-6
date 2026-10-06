@@ -1,0 +1,25 @@
+{
+  "name": "plume-app-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit",
+    "test:contours": "tsx scripts/smoke-contours.ts"
+  },
+  "dependencies": {
+    "maplibre-gl": "^4.7.1",
+    "vue": "^3.4.21"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.4",
+    "playwright": "^1.63.0",
+    "tsx": "^4.23.15",
+    "typescript": "~5.4.5",
+    "vite": "^5.2.0",
+    "vue-tsc": "^2.2.12"
+  }
+}
