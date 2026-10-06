@@ -135,3 +135,167 @@ def test_power_law_peak_location_analytic():
     x = data["grid"]["x_edges_m"][ix]
     expected = 60.0 / (math.sqrt(2) * 0.16)
     assert abs(x - expected) / expected < 0.02
+
+
+# ---------- 课堂自定义阈值统计 ----------
+
+def _cell_means(field: np.ndarray) -> np.ndarray:
+    return 0.25 * (
+        field[:-1, :-1] + field[:-1, 1:] + field[1:, :-1] + field[1:, 1:]
+    )
+
+
+def test_threshold_stats_shape_and_area():
+    """超阈单元数×实际米制间距 = 面积；占比按单元数；与独立复算一致。"""
+    payload = _base_payload(bg=10.0)
+    payload["threshold_ug_m3"] = 50.0
+    data = client.post("/api/plume/grid", json=payload).json()
+    ts = data["threshold_statistics"]
+
+    plume = np.array(data["plume_field_ug_m3"])
+    total = np.array(data["total_conc_ug_m3"])
+    dx = data["grid"]["spacing_downwind_m"]
+    dy = data["grid"]["spacing_crosswind_m"]
+    n_cells = (121 - 1) * (81 - 1)
+
+    for key, field in (("plume", plume), ("total", total)):
+        blk = ts[key]
+        n_over = int(np.count_nonzero(_cell_means(field) > 50.0))
+        assert blk["n_exceedance_cells"] == n_over
+        assert blk["exceedance_area_m2"] == pytest.approx(n_over * dx * dy)
+        assert blk["fraction_of_sampling_box"] == pytest.approx(n_over / n_cells)
+        assert 0.0 <= blk["fraction_of_sampling_box"] <= 1.0
+    assert ts["method"]["cell_area_m2"] == pytest.approx(dx * dy)
+    # 总面积不超过采样框
+    assert ts["plume"]["exceedance_area_m2"] <= ts["method"]["sampling_box_area_m2"]
+    assert ts["total"]["exceedance_area_m2"] <= ts["method"]["sampling_box_area_m2"]
+
+
+def test_threshold_above_all_values_gives_zero_area():
+    """阈值高于全部采样值：两类面积均为 0、占比 0、empty=True。"""
+    payload = _base_payload(bg=10.0)
+    payload["threshold_ug_m3"] = 1.0e9
+    data = client.post("/api/plume/grid", json=payload).json()
+    ts = data["threshold_statistics"]
+    for key in ("plume", "total"):
+        blk = ts[key]
+        assert blk["n_exceedance_cells"] == 0
+        assert blk["exceedance_area_m2"] == 0.0
+        assert blk["exceedance_area_km2"] == 0.0
+        assert blk["fraction_of_sampling_box"] == 0.0
+        assert blk["empty"] is True
+    assert ts["threshold_ug_m3"] == 1.0e9
+    assert ts["teaching_only"] is True
+
+
+def test_background_changes_only_total_stats():
+    """背景升高：plume 统计不变，仅 total 统计改变。"""
+    p1 = _base_payload(bg=0.0)
+    p1["threshold_ug_m3"] = 50.0
+    p2 = _base_payload(bg=80.0)
+    p2["threshold_ug_m3"] = 50.0
+    ts1 = client.post("/api/plume/grid", json=p1).json()["threshold_statistics"]
+    ts2 = client.post("/api/plume/grid", json=p2).json()["threshold_statistics"]
+    assert ts1["plume"] == ts2["plume"]
+    assert (
+        ts2["total"]["n_exceedance_cells"]
+        > ts1["total"]["n_exceedance_cells"]
+    )
+    # bg=80 > 阈值 50：总浓度处处超阈，占满整个采样框
+    assert ts2["total"]["fraction_of_sampling_box"] == pytest.approx(1.0)
+
+
+def test_threshold_stats_recompute_per_grid_resolution():
+    """切换粗细网格：源/气象不被回写；统计按各自间距重新计算。
+
+    粗网格覆盖的物理范围与细网格相同，超阈**面积**应相近（采样离散差异），
+    但单元数、间距、单元面积必须随分辨率改变。
+    """
+    coarse = _base_payload(bg=10.0)
+    coarse["grid"] = dict(coarse["grid"])
+    coarse["grid"].update(nx=41, ny=21)
+    coarse["threshold_ug_m3"] = 50.0
+    fine = _base_payload(bg=10.0)
+    fine["threshold_ug_m3"] = 50.0
+
+    r_c = client.post("/api/plume/grid", json=coarse).json()
+    r_f = client.post("/api/plume/grid", json=fine).json()
+
+    # 源项/气象未被网格回写
+    assert r_c["source_term"]["stack_height_m"] == 60.0
+    assert r_f["source_term"]["stack_height_m"] == 60.0
+    assert r_c["wind"]["wind_speed_ms"] == 4.0
+
+    tc, tf = r_c["threshold_statistics"], r_f["threshold_statistics"]
+    assert tc["method"]["spacing_downwind_m"] != tf["method"]["spacing_downwind_m"]
+    assert tc["method"]["spacing_crosswind_m"] != tf["method"]["spacing_crosswind_m"]
+    assert tc["plume"]["n_exceedance_cells"] != tf["plume"]["n_exceedance_cells"]
+    # 面积各自按实际间距重算（粗网格每单元面积更大）
+    assert tc["method"]["cell_area_m2"] > tf["method"]["cell_area_m2"]
+    for blk_c, blk_f in (
+        (tc["plume"], tf["plume"]),
+        (tc["total"], tf["total"]),
+    ):
+        assert blk_c["exceedance_area_m2"] == pytest.approx(
+            blk_c["n_exceedance_cells"] * tc["method"]["cell_area_m2"]
+        )
+        assert blk_f["exceedance_area_m2"] == pytest.approx(
+            blk_f["n_exceedance_cells"] * tf["method"]["cell_area_m2"]
+        )
+        # 同一连续场在同一范围上的面积估计应接近（<25% 离散差异）
+        assert abs(blk_c["exceedance_area_m2"] - blk_f["exceedance_area_m2"]) / max(
+            blk_f["exceedance_area_m2"], 1.0
+        ) < 0.25
+
+
+def test_threshold_stats_nodes_out_of_range_counted():
+    """下风向延伸到 Briggs 建议 10 km 之外：建议范围外格点数 > 0，
+    且超阈单元中的越界单元被单独计数。"""
+    payload = _base_payload(bg=0.0)
+    payload["grid"].update(downwind_extent_m=12000.0, nx=241, ny=41)
+    payload["threshold_ug_m3"] = 1.0
+    data = client.post("/api/plume/grid", json=payload).json()
+    ts = data["threshold_statistics"]
+    assert ts["recommended_range"]["applicable"] is True
+    assert ts["recommended_range"]["n_nodes_out_of_range"] > 0
+    # 10–12 km 处浓度很低，阈值 1 μg/m³ 下可能有少量超阈越界单元，计数合法
+    assert (
+        ts["plume"]["n_exceedance_cells_out_of_recommended_range"]
+        <= ts["plume"]["n_exceedance_cells"]
+    )
+
+
+def test_threshold_stats_power_law_range_not_applicable():
+    """幂律参数化没有 Briggs 建议区间：越界计数为 0、applicable=False。"""
+    payload = _base_payload(bg=0.0)
+    payload["parameterization"] = "power_law"
+    payload["power_law"] = {"ay": 0.22, "py": 1.0, "az": 0.16, "pz": 1.0}
+    payload["threshold_ug_m3"] = 50.0
+    ts = client.post("/api/plume/grid", json=payload).json()["threshold_statistics"]
+    assert ts["recommended_range"]["applicable"] is False
+    assert ts["recommended_range"]["n_nodes_out_of_range"] == 0
+
+
+def test_calm_wind_has_no_threshold_stats():
+    """静风仍返回 422 calm_wind，绝不产生任何浓度场或阈值统计。"""
+    payload = _base_payload(wind_speed=0.3)
+    payload["threshold_ug_m3"] = 50.0
+    resp = client.post("/api/plume/grid", json=payload)
+    assert resp.status_code == 422
+    assert "threshold_statistics" not in resp.json()
+
+
+def test_threshold_does_not_mutate_source_or_met():
+    """阈值只是课堂分析参数：不改变任何源项/气象物理量。"""
+    payload = _base_payload(bg=10.0)
+    payload["threshold_ug_m3"] = 999.0
+    data = client.post("/api/plume/grid", json=payload).json()
+    assert data["source_term"]["emission_rate_g_s"] == 50.0
+    assert data["wind"]["wind_speed_ms"] == 4.0
+    assert data["background_conc_ug_m3"] == 10.0
+    # 浓度场本身不因阈值而变
+    ref = client.post("/api/plume/grid", json=_base_payload(bg=10.0)).json()
+    assert np.allclose(
+        np.array(data["plume_field_ug_m3"]),
+        np.array(ref["plume_field_ug_m3"]),
+    )

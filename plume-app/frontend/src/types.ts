@@ -60,6 +60,7 @@ export interface PlumeGridResponse {
   background_conc_ug_m3: number
   total_conc_ug_m3: number[][]
   iso_levels_ug_m3: number[]
+  threshold_statistics: ThresholdStatistics
   effective_stack_height_m: number
   plume_rise_delta_h_m: number
   wind: {
@@ -79,6 +80,48 @@ export interface PlumeGridResponse {
   disclaimer: string
 }
 
+export interface ThresholdBlock {
+  field: 'plume' | 'total'
+  max_ug_m3: number
+  n_exceedance_cells: number
+  exceedance_area_m2: number
+  exceedance_area_km2: number
+  fraction_of_sampling_box: number
+  fraction_of_sampling_box_percent: number
+  n_exceedance_cells_out_of_recommended_range: number
+  empty: boolean
+}
+
+export interface ThresholdStatistics {
+  threshold_ug_m3: number
+  teaching_only: boolean
+  not_a_legal_limit: string
+  method: {
+    basis: string
+    cell_value: string
+    comparison: string
+    area_formula: string
+    spacing_downwind_m: number
+    spacing_crosswind_m: number
+    cell_area_m2: number
+    n_grid_nodes: number
+    n_grid_cells: number
+    sampling_box_area_m2: number
+    interpolation_note: string
+  }
+  recommended_range: {
+    parameterization: string
+    briggs_valid_range_m: [number, number]
+    applicable: boolean
+    n_nodes_out_of_range: number
+    note: string
+  }
+  plume: ThresholdBlock
+  total: ThresholdBlock
+  background_conc_ug_m3: number
+  background_effect_note: string
+}
+
 export interface PlumeGridRequest {
   source: SourceInput
   meteorology: MeteorologyInput
@@ -89,6 +132,7 @@ export interface PlumeGridRequest {
   parameterization: 'briggs_rural' | 'power_law'
   power_law?: { ay: number; py: number; az: number; pz: number } | null
   calm_threshold_ms: number
+  threshold_ug_m3: number
 }
 
 export interface CheckResult {

@@ -138,6 +138,136 @@ def iso_levels(max_value: float, n_levels: int = 8) -> list[float]:
     return out[-n_levels:]
 
 
+THRESHOLD_NOTE = (
+    "阈值为课堂自定义的教学分析口径，不是任何环境质量法定限值或事故预警值；"
+    "超阈面积按采样网格的实际米制间距、以每个网格单元四角节点浓度的"
+    "算术均值判定（严格大于阈值），面积=超阈单元数×下风向间距×横风向间距，"
+    "属于离散采样上的保守估计，不使用等值线插值精度，也不代表真实暴露面积。"
+)
+
+
+def _cell_corner_means(field: np.ndarray) -> np.ndarray:
+    """节点数组 (ny, nx) -> 单元代表值数组 (ny-1, nx-1)，每单元取四角均值。"""
+    return 0.25 * (
+        field[:-1, :-1] + field[:-1, 1:] + field[1:, :-1] + field[1:, 1:]
+    )
+
+
+def threshold_statistics(
+    plume: np.ndarray,
+    bg: float,
+    grid: dict,
+    threshold: float,
+    parameterization: str,
+) -> dict:
+    """按**当前网格的实际米制间距**统计烟羽贡献/总浓度的超阈面积。
+
+    统计对象是网格单元（相邻 4 个节点围成的四边形）：
+    单元代表值取四角节点均值，严格 ``> threshold`` 判超阈；
+    面积 = 超阈单元数 × dx × dy（矩形烟羽坐标下的米制面积）。
+    与等值线/等值区的线性插值完全无关——插值只用于可视化。
+
+    “模型建议范围外的格点数”沿用 gaussian.py 的节点口径：
+    Briggs 下风向超出建议 [xmin, xmax] 的节点数（幂律参数化不适用，置 0）。
+    另给出超阈单元中心落在建议范围外的单元数，提示该面积的可信度。
+    """
+    total = plume + float(bg)
+    dx = float(grid["spacing_downwind_m"])
+    dy = float(grid["spacing_crosswind_m"])
+    cell_area_m2 = dx * dy
+
+    ny, nx = plume.shape
+    n_cells = (nx - 1) * (ny - 1)
+
+    # 单元中心的下风向坐标（取相邻 x 节点中点；横风向位置不影响范围判定）
+    x_edges = np.asarray(grid["x_edges_m"], dtype=float)
+    y_edges = np.asarray(grid["y_edges_m"], dtype=float)
+    xc = 0.5 * (x_edges[:-1] + x_edges[1:])
+    xx_c = np.broadcast_to(xc, (ny - 1, nx - 1))
+
+    sample_area_m2 = (
+        float(x_edges[-1] - x_edges[0]) * float(y_edges[-1] - y_edges[0])
+    )
+
+    valid_x_min = settings.briggs_valid_x_min_m
+    valid_x_max = settings.briggs_valid_x_max_m
+    briggs_applicable = parameterization == "briggs_rural"
+    cell_oob = (
+        (xx_c > 0.0) & ((xx_c < valid_x_min) | (xx_c > valid_x_max))
+        if briggs_applicable
+        else np.zeros((ny - 1, nx - 1), dtype=bool)
+    )
+    # 节点口径的建议范围外格点数（与 diagnostics 中越界计数同口径）
+    xx_node = np.broadcast_to(x_edges, plume.shape)
+    node_oob = (
+        (xx_node > 0.0) & ((xx_node < valid_x_min) | (xx_node > valid_x_max))
+        if briggs_applicable
+        else np.zeros_like(plume, dtype=bool)
+    )
+
+    def _block(values: np.ndarray, cell_values: np.ndarray, label: str) -> dict:
+        over = cell_values > threshold
+        n_over = int(np.count_nonzero(over))
+        n_over_oob = int(np.count_nonzero(over & cell_oob))
+        area = n_over * cell_area_m2
+        frac_of_cells = n_over / n_cells if n_cells else 0.0
+        return {
+            "field": label,
+            "max_ug_m3": float(np.max(values)),
+            "n_exceedance_cells": n_over,
+            "exceedance_area_m2": float(area),
+            "exceedance_area_km2": float(area / 1.0e6),
+            "fraction_of_sampling_box": float(frac_of_cells),
+            "fraction_of_sampling_box_percent": float(100.0 * frac_of_cells),
+            "n_exceedance_cells_out_of_recommended_range": n_over_oob,
+            "empty": n_over == 0,
+        }
+
+    plume_cells = _cell_corner_means(plume)
+    total_cells = _cell_corner_means(total)
+
+    return {
+        "threshold_ug_m3": float(threshold),
+        "teaching_only": True,
+        "not_a_legal_limit": THRESHOLD_NOTE,
+        "method": {
+            "basis": "网格单元四角节点浓度均值，严格大于阈值",
+            "cell_value": "mean of 4 corner nodes",
+            "comparison": "cell_value > threshold",
+            "area_formula": "n_exceedance_cells * spacing_downwind_m * spacing_crosswind_m",
+            "spacing_downwind_m": dx,
+            "spacing_crosswind_m": dy,
+            "cell_area_m2": float(cell_area_m2),
+            "n_grid_nodes": nx * ny,
+            "n_grid_cells": n_cells,
+            "sampling_box_area_m2": float(sample_area_m2),
+            "interpolation_note": (
+                "本统计不使用 marching squares 等值线插值；"
+                "等值线仅用于可视化，不能当作真实暴露面积。"
+            ),
+        },
+        "recommended_range": {
+            "parameterization": parameterization,
+            "briggs_valid_range_m": [valid_x_min, valid_x_max],
+            "applicable": briggs_applicable,
+            "n_nodes_out_of_range": int(np.count_nonzero(node_oob)),
+            "note": (
+                "Briggs 乡村系数建议下风向 x ∈ "
+                f"[{valid_x_min:g}, {valid_x_max:g}] m；幂律参数化无此建议区间。"
+                if briggs_applicable
+                else "当前为幂律参数化，未定义 Briggs 建议适用范围，越界计数为 0。"
+            ),
+        },
+        "plume": _block(plume, plume_cells, "plume"),
+        "total": _block(total, total_cells, "total"),
+        "background_conc_ug_m3": float(bg),
+        "background_effect_note": (
+            "背景为空间常数，只改变 total（总浓度）统计；"
+            "plume（烟羽贡献）统计与背景无关。"
+        ),
+    }
+
+
 def run_grid(req: PlumeGridRequest) -> dict:
     """完整的网格计算流程；静风/非法输入向上抛 CalmWindError/PlumeInputError。"""
     spec = req.grid
@@ -205,6 +335,18 @@ def run_grid(req: PlumeGridRequest) -> dict:
         "background_conc_ug_m3": float(bg),
         "total_conc_ug_m3": total.tolist(),
         "iso_levels_ug_m3": iso_levels(float(plume.max())),
+        "threshold_statistics": threshold_statistics(
+            plume=plume,
+            bg=bg,
+            grid={
+                "x_edges_m": grid["x_edges_m"],
+                "y_edges_m": grid["y_edges_m"],
+                "spacing_downwind_m": grid["spacing_downwind_m"],
+                "spacing_crosswind_m": grid["spacing_crosswind_m"],
+            },
+            threshold=req.threshold_ug_m3,
+            parameterization=req.parameterization,
+        ),
         "effective_stack_height_m": float(h_eff),
         "plume_rise_delta_h_m": float(rise_detail["delta_h_m"]),
         "wind": {

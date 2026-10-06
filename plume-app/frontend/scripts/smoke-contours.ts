@@ -1,4 +1,4 @@
-import { marchingSquares, gridFillPolygons, samplingBoundary } from '../src/marching.ts'
+import { marchingSquares, gridFillPolygons, samplingBoundary, exceedanceCellPolygons } from '../src/marching.ts'
 import { makeColorFor } from '../src/colors.ts'
 
 // 构造一个不旋转（lon/lat 等距）的二维高斯峰网格
@@ -54,6 +54,36 @@ assert(b.geometry.coordinates[0].length === 5, '采样边界闭合（5 点含首
 const zAsym = z.map(row => row.map(v => v)) // 同一份
 const fA = marchingSquares(zAsym, lon, lat, 40)
 assert(fA.geometry.coordinates.length > 0, '对称场可重复提取')
+
+// 7. 超阈单元：高于全部值 -> 空；阈值越低单元越多；口径为四角均值严格大于
+const exEmpty = exceedanceCellPolygons(z, lon, lat, 1e9, 'plume')
+assert(exEmpty.features.length === 0, '阈值高于全部采样值时超阈区域为空（面积为 0）')
+
+const ex50 = exceedanceCellPolygons(z, lon, lat, 50, 'plume')
+const ex30 = exceedanceCellPolygons(z, lon, lat, 30, 'total')
+assert(ex50.features.length > 0 && ex30.features.length > ex50.features.length,
+  `超阈单元数随阈值降低而增多（50→${ex50.features.length}，30→${ex30.features.length}）`)
+
+// 独立复算：与直接遍历四角均值计数一致
+let manual = 0
+for (let r = 0; r < ny - 1; r++) {
+  for (let c = 0; c < nx - 1; c++) {
+    const mean = (z[r][c] + z[r][c + 1] + z[r + 1][c] + z[r + 1][c + 1]) / 4
+    if (mean > 50) manual++
+  }
+}
+assert(ex50.features.length === manual,
+  `超阈单元数 ${ex50.features.length} 与四角均值独立复算 ${manual} 一致`)
+
+// 等于阈值的单元不超阈（严格大于）：构造全场恰好为 10 的网格
+const zFlat = Array.from({ length: 5 }, () => Array.from({ length: 5 }, () => 10))
+const lonFlat = zFlat[0].map((_, c) => c * 0.001)
+const lonGrid = zFlat.map(() => [...lonFlat])
+const latGrid = zFlat.map((row, r) => row.map(() => r * 0.001))
+assert(exceedanceCellPolygons(zFlat, lonGrid, latGrid, 10, 'plume').features.length === 0,
+  '单元均值恰好等于阈值不计为超阈（严格 >）')
+assert(exceedanceCellPolygons(zFlat, lonGrid, latGrid, 9.999, 'plume').features.length === 16,
+  '阈值略低于全场值时全部 16 个单元超阈')
 
 if (failures) { console.error(`${failures} failures`); process.exit(1) }
 console.log('marching squares smoke tests passed')

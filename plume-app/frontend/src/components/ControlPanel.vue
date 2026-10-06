@@ -194,5 +194,24 @@ const isCalm = computed(() => props.form.windSpeed < props.form.calmThreshold)
       </button>
       <span v-if="isCalm" class="badge bad">静风，已停用</span>
     </div>
+
+    <div class="section">
+      <h2>⑤ 课堂自定义阈值（教学分析，非法定限值）</h2>
+      <label class="field">
+        <span class="lbl">浓度阈值（μg/m³）<b>{{ form.threshold }}</b></span>
+        <input data-test="threshold" class="num" type="number" min="0" step="1" :value="form.threshold"
+          @input="patch({ threshold: Number(($event.target as HTMLInputElement).value) })"
+          @change="!isCalm && emit('run')" />
+      </label>
+      <div class="muted" style="font-size:11px;line-height:1.5">
+        按当前网格的实际米制间距统计烟羽贡献与总浓度的超阈面积、
+        占采样框比例及模型建议范围外格点数；背景值只影响总浓度统计。
+        阈值与 nx/ny 一样只是本次请求参数，不写回源项与气象。
+      </div>
+      <div class="notice warn" style="margin-top:6px;font-size:11px">
+        超阈面积为离散网格单元计数（四角节点均值严格大于阈值），
+        不使用等值线插值精度，不代表真实暴露面积，更不是法规达标判定。
+      </div>
+    </div>
   </div>
 </template>

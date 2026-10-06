@@ -140,3 +140,40 @@ export function samplingBoundary(
     geometry: { type: 'Polygon', coordinates: [ring] },
   }
 }
+
+/**
+ * 超阈网格单元多边形（与后端统计同口径）：
+ * 每个单元取四角节点值的算术平均，**严格大于** threshold 才输出；
+ * 单元面积统计在后端按实际米制间距完成，这里只负责地图叠加。
+ * 不走等值线插值——这是显式的离散采样口径。
+ */
+export function exceedanceCellPolygons(
+  z: number[][],
+  lon: number[][],
+  lat: number[][],
+  threshold: number,
+  kind: 'plume' | 'total',
+): GeoJSON.FeatureCollection {
+  const ny = z.length
+  const nx = z[0].length
+  const features: GeoJSON.Feature[] = []
+  for (let r = 0; r < ny - 1; r++) {
+    for (let c = 0; c < nx - 1; c++) {
+      const v = (z[r][c] + z[r][c + 1] + z[r + 1][c] + z[r + 1][c + 1]) / 4
+      if (!(v > threshold)) continue
+      const ring = [
+        [lon[r][c], lat[r][c]],
+        [lon[r][c + 1], lat[r][c + 1]],
+        [lon[r + 1][c + 1], lat[r + 1][c + 1]],
+        [lon[r + 1][c], lat[r + 1][c]],
+        [lon[r][c], lat[r][c]],
+      ]
+      features.push({
+        type: 'Feature',
+        properties: { kind, value: v, threshold },
+        geometry: { type: 'Polygon', coordinates: [ring] },
+      })
+    }
+  }
+  return { type: 'FeatureCollection', features }
+}

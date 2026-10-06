@@ -92,6 +92,14 @@ class PlumeGridRequest(BaseModel):
         description="power_law 参数: ay, py, az, pz（均为正）",
     )
     calm_threshold_ms: float = Field(1.0, gt=0.0, le=5.0)
+    threshold_ug_m3: float = Field(
+        50.0,
+        ge=0.0,
+        description=(
+            "课堂自定义浓度阈值（μg/m³），仅用于超阈面积的教学统计，"
+            "不代表任何法定限值；与采样网格一样不回写源项/气象。"
+        ),
+    )
 
 
 class PlumeGridResponse(BaseModel):
@@ -104,6 +112,12 @@ class PlumeGridResponse(BaseModel):
     background_conc_ug_m3: float
     total_conc_ug_m3: list[list[float]]
     iso_levels_ug_m3: list[float]
+    threshold_statistics: dict = Field(
+        description=(
+            "课堂自定义阈值下的超阈面积统计（按实际米制网格间距、"
+            "以单元四角节点均值判定，非等值线插值面积）"
+        )
+    )
     effective_stack_height_m: float
     plume_rise_delta_h_m: float
     wind: dict

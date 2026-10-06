@@ -26,11 +26,15 @@ async function scene() {
     for (const f of fill.features) if (f.properties.value > max) max = f.properties.value
     const wind = map.getSource('wind')._data
     const line = wind.features.find((f: any) => f.geometry.type === 'LineString')
+    const thPlume = map.getSource('thplume')._data.features.length
+    const thTotal = map.getSource('thtotal')._data.features.length
     return {
       fillCount: fill.features.length,
       max,
       windHead: line ? line.geometry.coordinates[1] : null,
       windTail: line ? line.geometry.coordinates[0] : null,
+      thPlume,
+      thTotal,
     }
   })
 }
@@ -87,9 +91,24 @@ await runAndWait()
 const coarse = await scene()
 console.log('E 最大浓度 细网格=', fine.max.toFixed(3), ' 粗网格=', coarse.max.toFixed(3))
 
+// F 课堂阈值：低阈值有超阈单元；阈值高于全部值 -> 超阈区为 0；总浓度超阈单元 ≥ 烟羽
+const thInput = () => page.locator('input[data-test="threshold"]')
+await thInput().fill('50')
+await thInput().dispatchEvent('input')
+await runAndWait()
+const thLow = await scene()
+await thInput().fill('1000000')
+await thInput().dispatchEvent('input')
+await runAndWait()
+const thHigh = await scene()
+console.log('F 阈值=50 超阈单元 烟羽=', thLow.thPlume, ' 总浓度=', thLow.thTotal,
+  '| 阈值=1e6 时烟羽=', thHigh.thPlume, ' 总浓度=', thHigh.thTotal)
+const thOk = thLow.thPlume > 0 && thLow.thTotal >= thLow.thPlume &&
+  thHigh.thPlume === 0 && thHigh.thTotal === 0
+
 await page.screenshot({ path: '/tmp/plume-interact.png' })
 const pass = goesSouth && goesWest && stabB.fillCount > stabF.fillCount &&
-  highH.max < lowH.max
+  highH.max < lowH.max && thOk
 if (errors.length || !pass) { console.log('JS ERRORS:', errors, 'PASS:', pass); process.exit(1) }
 console.log('all interaction scenario checks passed, no JS errors')
 await browser.close()

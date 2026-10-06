@@ -24,6 +24,8 @@ export interface FormState {
   nx: number
   ny: number
   calmThreshold: number
+  /** 课堂自定义浓度阈值（μg/m³），仅教学统计，非法定限值 */
+  threshold: number
 }
 
 export const DEFAULT_FORM: FormState = {
@@ -52,4 +54,5 @@ export const DEFAULT_FORM: FormState = {
   nx: 121,
   ny: 81,
   calmThreshold: 1,
+  threshold: 50,
 }

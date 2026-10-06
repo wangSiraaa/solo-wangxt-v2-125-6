@@ -22,6 +22,8 @@ const repo = ref<string>('…')
 const showFill = ref(true)
 const showIso = ref(true)
 const showBg = ref(true)
+const showThPlume = ref(true)
+const showThTotal = ref(true)
 
 const isCalm = computed(() => form.value.windSpeed < form.value.calmThreshold)
 
@@ -130,6 +132,7 @@ async function run() {
           ? { ay: form.value.ay, py: form.value.py, az: form.value.az, pz: form.value.pz }
           : null,
       calm_threshold_ms: form.value.calmThreshold,
+      threshold_ug_m3: form.value.threshold,
     })
   } catch (e: any) {
     result.value = null
@@ -173,6 +176,8 @@ const stops = computed(() =>
         :show-fill="showFill"
         :show-iso="showIso"
         :show-bg="showBg"
+        :show-th-plume="showThPlume"
+        :show-th-total="showThTotal"
       />
       <div
         v-if="result && stops.length"
@@ -207,6 +212,19 @@ const stops = computed(() =>
           <div class="muted" style="font-size:10px;margin-top:2px">
             总浓度＝烟羽贡献＋背景值，见右侧结果分解与悬停读数
           </div>
+          <template v-if="result.threshold_statistics">
+            <div class="th-legend-title">
+              课堂阈值 {{ result.threshold_statistics.threshold_ug_m3 }} μg/m³ 超阈区
+            </div>
+            <label class="toggle" style="margin:2px 0">
+              <input type="checkbox" v-model="showThPlume" />
+              <span class="sw sw-plume"></span>烟羽贡献超阈单元
+            </label>
+            <label class="toggle" style="margin:2px 0">
+              <input type="checkbox" v-model="showThTotal" />
+              <span class="sw sw-total"></span>总浓度超阈单元（含背景）
+            </label>
+          </template>
         </div>
       </div>
       <div v-if="isCalm" class="notice err" style="position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:6;max-width:560px">

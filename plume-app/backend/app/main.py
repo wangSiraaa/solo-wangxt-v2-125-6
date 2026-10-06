@@ -106,6 +106,18 @@ def meta():
             "default_threshold_ms": settings.default_calm_threshold_ms,
             "behavior": "低于阈值返回 422 calm_wind，拒绝硬算",
         },
+        "teaching_threshold": {
+            "request_field": "threshold_ug_m3",
+            "default_ug_m3": 50.0,
+            "purpose": "课堂自定义浓度阈值，统计烟羽贡献/总浓度的超阈采样面积",
+            "teaching_only": True,
+            "legal_note": "不是法定环境质量限值，不得用于达标判定或事故预警",
+            "method": (
+                "按网格实际米制间距，以单元四角节点均值严格大于阈值计数；"
+                "面积=超阈单元数×dx×dy；非等值线插值面积，不代表真实暴露面积"
+            ),
+            "fields": ["plume（烟羽贡献）", "total（总浓度=烟羽+背景）"],
+        },
         "stability_classes": [
             {"class": s, **STABILITY_DESCRIPTIONS[s]} for s in STABILITY_CLASSES
         ],

@@ -161,5 +161,24 @@ details.params summary { cursor: pointer; color: var(--muted); font-size: 12px; 
 }
 .muted { color: var(--muted); }
 .mono { font-family: ui-monospace, monospace; }
+
+/* 课堂阈值超阈区图例色块 */
+.sw {
+  display: inline-block; width: 12px; height: 12px;
+  border: 1px solid; border-radius: 2px; vertical-align: -1px;
+  margin-right: 2px; flex: none;
+}
+.sw-plume { background: rgba(217, 119, 6, .45); border-color: #92400e; }
+.sw-total { background: rgba(220, 38, 38, .22); border-color: #991b1b; }
+.th-legend-title {
+  margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line);
+  font-size: 11px; color: #3c4a5a;
+}
+.mapinfo .th-rule {
+  margin: 6px 0; border-top: 1px dashed var(--line);
+}
+.mapinfo .th-row { font-size: 11px; margin-top: 2px; }
+.mapinfo .sw { width: 10px; height: 10px; }
+
 table.meta-tbl { width: 100%; border-collapse: collapse; font-size: 11.5px; }
 table.meta-tbl td, table.meta-tbl th { border: 1px solid var(--line); padding: 3px 6px; text-align: left; }

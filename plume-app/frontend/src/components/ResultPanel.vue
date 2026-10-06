@@ -95,6 +95,80 @@ function fmt(v: number, d = 2) {
         </div>
 
         <div class="section">
+          <h2>课堂阈值超阈统计（教学口径，非法定限值）</h2>
+          <template v-if="result.threshold_statistics">
+            <div class="notice warn" style="font-size:11px">
+              {{ result.threshold_statistics.not_a_legal_limit }}
+            </div>
+            <dl class="kv">
+              <dt>自定义阈值</dt>
+              <dd>{{ fmt(result.threshold_statistics.threshold_ug_m3) }} μg/m³</dd>
+              <dt>网格间距（下风向/横风向）</dt>
+              <dd>
+                {{ fmt(result.threshold_statistics.method.spacing_downwind_m, 1) }} /
+                {{ fmt(result.threshold_statistics.method.spacing_crosswind_m, 1) }} m
+              </dd>
+              <dt>采样框总面积</dt>
+              <dd>{{ fmt(result.threshold_statistics.method.sampling_box_area_m2 / 1e6, 3) }} km²</dd>
+            </dl>
+            <table class="meta-tbl" style="margin-top:8px">
+              <tr><th>口径</th><th>超阈单元</th><th>面积</th><th>占采样框</th></tr>
+              <tr>
+                <td><span class="sw sw-plume"></span>烟羽贡献</td>
+                <td class="mono">{{ result.threshold_statistics.plume.n_exceedance_cells }}</td>
+                <td class="mono">
+                  {{ fmt(result.threshold_statistics.plume.exceedance_area_km2, 3) }} km²
+                </td>
+                <td class="mono">
+                  {{ fmt(result.threshold_statistics.plume.fraction_of_sampling_box_percent, 1) }}%
+                </td>
+              </tr>
+              <tr>
+                <td><span class="sw sw-total"></span>总浓度</td>
+                <td class="mono">{{ result.threshold_statistics.total.n_exceedance_cells }}</td>
+                <td class="mono">
+                  {{ fmt(result.threshold_statistics.total.exceedance_area_km2, 3) }} km²
+                </td>
+                <td class="mono">
+                  {{ fmt(result.threshold_statistics.total.fraction_of_sampling_box_percent, 1) }}%
+                </td>
+              </tr>
+            </table>
+            <div v-if="result.threshold_statistics.plume.empty && result.threshold_statistics.total.empty"
+              class="notice info" style="margin-top:8px">
+              阈值高于采样框内全部浓度值：烟羽贡献与总浓度超阈面积均为 0
+              （该分辨率下无超阈采样单元）。
+            </div>
+            <dl class="kv" style="margin-top:8px">
+              <dt>建议范围外格点数</dt>
+              <dd>
+                <template v-if="result.threshold_statistics.recommended_range.applicable">
+                  {{ result.threshold_statistics.recommended_range.n_nodes_out_of_range }}
+                  <span class="muted">
+                    （Briggs {{ result.threshold_statistics.recommended_range.briggs_valid_range_m[0] / 1000 }}–
+                    {{ result.threshold_statistics.recommended_range.briggs_valid_range_m[1] / 1000 }} km）
+                  </span>
+                </template>
+                <span v-else class="muted">不适用（幂律参数化）</span>
+              </dd>
+              <dt>烟羽超阈单元中越界</dt>
+              <dd>
+                {{ result.threshold_statistics.plume.n_exceedance_cells_out_of_recommended_range }}
+              </dd>
+              <dt>总浓度超阈单元中越界</dt>
+              <dd>
+                {{ result.threshold_statistics.total.n_exceedance_cells_out_of_recommended_range }}
+              </dd>
+            </dl>
+            <div class="muted" style="font-size:11px;margin-top:6px;line-height:1.55">
+              {{ result.threshold_statistics.background_effect_note }}<br />
+              {{ result.threshold_statistics.method.interpolation_note }}
+            </div>
+          </template>
+          <div v-else class="muted">暂无阈值统计（静风时模型不输出浓度场）。</div>
+        </div>
+
+        <div class="section">
           <h2>有效源高</h2>
           <dl class="kv">
             <dt>烟囱几何高度 H</dt>

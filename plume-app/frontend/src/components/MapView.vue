@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import maplibregl from 'maplibre-gl'
 import type { PlumeGridResponse } from '../types'
 import {
+  exceedanceCellPolygons,
   gridFillPolygons,
   marchingSquares,
   samplingBoundary,
@@ -14,6 +15,8 @@ const props = defineProps<{
   showFill: boolean
   showIso: boolean
   showBg: boolean
+  showThPlume: boolean
+  showThTotal: boolean
 }>()
 
 const hover = ref<{
@@ -31,6 +34,13 @@ let sourceMarker: maplibregl.Marker | null = null
 let rafPending = false
 
 const R = 6371000
+
+/** 超阈面积展示：0 或很小值用 m²，其余 km² 三位有效数字。 */
+function fmtArea(km2: number): string {
+  if (km2 <= 0) return '0'
+  if (km2 < 0.01) return `${(km2 * 1e6).toFixed(0)} m²`
+  return km2.toFixed(3)
+}
 
 function blankStyle(): maplibregl.StyleSpecification {
   const style: any = {
@@ -99,6 +109,33 @@ onMounted(() => {
           0.001, 0.6, 1000, 2.4],
         'line-opacity': 0.85,
       },
+    })
+    // 课堂阈值超阈区（与后端单元计数同口径；不是等值线插值结果）
+    map!.addSource('thplume', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
+    map!.addLayer({
+      id: 'thplume-fill',
+      type: 'fill',
+      source: 'thplume',
+      paint: { 'fill-color': '#d97706', 'fill-opacity': 0.45 },
+    })
+    map!.addLayer({
+      id: 'thplume-line',
+      type: 'line',
+      source: 'thplume',
+      paint: { 'line-color': '#92400e', 'line-width': 0.8, 'line-opacity': 0.9 },
+    })
+    map!.addSource('thtotal', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
+    map!.addLayer({
+      id: 'thtotal-fill',
+      type: 'fill',
+      source: 'thtotal',
+      paint: { 'fill-color': '#dc2626', 'fill-opacity': 0.22 },
+    })
+    map!.addLayer({
+      id: 'thtotal-line',
+      type: 'line',
+      source: 'thtotal',
+      paint: { 'line-color': '#991b1b', 'line-width': 0.6, 'line-opacity': 0.7 },
     })
     map!.addSource('boundary', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
     map!.addLayer({
@@ -283,6 +320,30 @@ function render(r: PlumeGridResponse) {
     features: isoFeatures,
   } as any)
 
+  // 课堂阈值超阈区：单元四角均值严格大于阈值（与后端统计同口径）
+  const ts = r.threshold_statistics
+  const threshold = ts?.threshold_ug_m3 ?? 0
+  const thPlumeFC = props.showThPlume
+    ? exceedanceCellPolygons(
+        r.plume_field_ug_m3,
+        r.grid.lon_grid,
+        r.grid.lat_grid,
+        threshold,
+        'plume',
+      )
+    : { type: 'FeatureCollection' as const, features: [] }
+  ;(map.getSource('thplume') as maplibregl.GeoJSONSource).setData(thPlumeFC as any)
+  const thTotalFC = props.showThTotal
+    ? exceedanceCellPolygons(
+        r.total_conc_ug_m3,
+        r.grid.lon_grid,
+        r.grid.lat_grid,
+        threshold,
+        'total',
+      )
+    : { type: 'FeatureCollection' as const, features: [] }
+  ;(map.getSource('thtotal') as maplibregl.GeoJSONSource).setData(thTotalFC as any)
+
   ;(map.getSource('boundary') as maplibregl.GeoJSONSource).setData({
     type: 'FeatureCollection',
     features: [samplingBoundary(r.grid.corners_lonlat)],
@@ -316,7 +377,7 @@ function render(r: PlumeGridResponse) {
 function clearMap() {
   if (!map || !map.getSource('fill')) return
   const empty = { type: 'FeatureCollection' as const, features: [] }
-  for (const id of ['fill', 'iso', 'bgval', 'boundary', 'wind']) {
+  for (const id of ['fill', 'iso', 'bgval', 'boundary', 'wind', 'thplume', 'thtotal']) {
     ;(map.getSource(id) as maplibregl.GeoJSONSource).setData(empty as any)
   }
   sourceMarker?.remove()
@@ -331,7 +392,7 @@ watch(
   },
 )
 watch(
-  () => [props.showFill, props.showIso, props.showBg],
+  () => [props.showFill, props.showIso, props.showBg, props.showThPlume, props.showThTotal],
   () => {
     if (props.result) render(props.result)
   },
@@ -347,6 +408,27 @@ watch(
         {{ result.grid.spacing_crosswind_m.toFixed(0) }} m（下风向/横风向）
       </div>
       <div class="muted">虚线矩形＝采样边界，结果不外推到界外</div>
+      <template v-if="result.threshold_statistics">
+        <div class="th-rule"></div>
+        <div>
+          <b>超阈统计</b>（课堂阈值
+          {{ result.threshold_statistics.threshold_ug_m3 }} μg/m³，非法定限值）
+        </div>
+        <div class="th-row">
+          <span class="sw sw-plume"></span>烟羽贡献：
+          <b>{{ fmtArea(result.threshold_statistics.plume.exceedance_area_km2) }}</b> km²
+          （{{ result.threshold_statistics.plume.fraction_of_sampling_box_percent.toFixed(1) }}%）
+        </div>
+        <div class="th-row">
+          <span class="sw sw-total"></span>总浓度：
+          <b>{{ fmtArea(result.threshold_statistics.total.exceedance_area_km2) }}</b> km²
+          （{{ result.threshold_statistics.total.fraction_of_sampling_box_percent.toFixed(1) }}%）
+        </div>
+        <div class="muted">
+          建议范围外格点 {{ result.threshold_statistics.recommended_range.n_nodes_out_of_range }}
+          个；口径＝单元四角均值严格大于阈值，非等值线插值面积
+        </div>
+      </template>
     </div>
     <div v-if="hover" class="legend" style="width: 250px">
       <div><b>最近采样点</b>（x={{ hover.xm.toFixed(0) }} m, y={{ hover.ym.toFixed(0) }} m）</div>
